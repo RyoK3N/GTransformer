@@ -379,26 +379,41 @@ def train(args):
                 
                 if show_visualization and i % 50 == 0:
                     try:
-                        # Validation visualizations
-                        keypoints_2d_np = keypoints_2d[0].detach().cpu().numpy()
-                        keypoints_2d_np = keypoints_2d_np.reshape(31, 2)  # Reshape to (num_joints, 2)
-                        fig = skeleton.plot_graph_with_keypoints(keypoints_2d_np)
-                        writer.add_figure('Validation/InputSkeleton', fig, global_step)
-                        plt.close(fig)
+                        # Updated camera matrix visualization
+                        fig = plt.figure(figsize=(15, 5))
+                        pred_np = outputs[0].detach().cpu().numpy().reshape(4, 4)
+                        target_np = camera_matrix[0].detach().cpu().numpy().reshape(4, 4)
                         
-                        visualize_graph_convolutions(skeleton, activations, writer, global_step)
-                        
-                        fig = plt.figure(figsize=(10, 5))
-                        pred_np = outputs[0].detach().cpu().numpy().reshape(4, 4)  # Reshape to 4x4 matrix
-                        target_np = camera_matrix[0].detach().cpu().numpy().reshape(4, 4)  # Reshape to 4x4 matrix
+                        # Line plot comparison
                         plt.subplot(1, 2, 1)
-                        plt.imshow(pred_np, cmap='viridis')
-                        plt.colorbar()
-                        plt.title('Predicted Camera Matrix')
+                        pred_flat = pred_np.flatten()
+                        target_flat = target_np.flatten()
+                        x_axis = np.arange(len(pred_flat))
+                        
+                        plt.plot(x_axis, pred_flat, 'b-', label='Predicted', linewidth=2)
+                        plt.plot(x_axis, target_flat, 'r--', label='Target', linewidth=2)
+                        plt.xlabel('Matrix Element Index')
+                        plt.ylabel('Value')
+                        plt.title('Camera Matrix Values Comparison')
+                        plt.legend()
+                        plt.grid(True)
+                        
+                        # Difference matrix with annotations
                         plt.subplot(1, 2, 2)
-                        plt.imshow(target_np, cmap='viridis')
-                        plt.colorbar()
-                        plt.title('Target Camera Matrix')
+                        diff = pred_np - target_np
+                        vmax = max(abs(diff.min()), abs(diff.max()))
+                        vmin = -vmax
+                        im = plt.imshow(diff, cmap='RdBu_r', vmin=vmin, vmax=vmax)
+                        
+                        # Add difference values as annotations
+                        for i in range(diff.shape[0]):
+                            for j in range(diff.shape[1]):
+                                text = f'{diff[i, j]:.3f}'
+                                plt.text(j, i, text, ha='center', va='center')
+                        
+                        plt.colorbar(im)
+                        plt.title('Difference Matrix')
+                        
                         plt.tight_layout()
                         writer.add_figure('Validation/Predictions', fig, global_step)
                         plt.close(fig)
