@@ -162,4 +162,4 @@ class KTPFormer(nn.Module):
 
         if self.track_activations:
             return x, activations
-        return x
+        return x 
