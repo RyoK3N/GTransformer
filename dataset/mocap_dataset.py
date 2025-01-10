@@ -92,7 +92,7 @@ class MocapDataset(Dataset):
         cleaned_camera_matrix = camera_matrix.copy()
         
         # Get the translation vector (last row)
-        translation = camera_matrix[3, :]
+        translation = camera_matrix[3, :3]
         
         # Define clip bounds (e.g., 5th and 95th percentiles)
         lower_bound = np.percentile(translation, 5)
@@ -102,7 +102,7 @@ class MocapDataset(Dataset):
         clipped_translation = np.clip(translation, lower_bound, upper_bound)
         
         # Replace the last row with clipped values
-        cleaned_camera_matrix[3, :] = clipped_translation
+        cleaned_camera_matrix[3, :3] = clipped_translation
         
         # Flatten the cleaned camera matrix
         cleaned_camera_matrix = cleaned_camera_matrix.flatten()
