@@ -85,13 +85,28 @@ class MocapDataset(Dataset):
             self.keypoints = np.round(self.keypoints, decimals=precision)
 
     def clip_outliers_camera_matrix(self, camera_matrix):
-        camera_matrix = self.set_precision(data=camera_matrix)
-        cleaned_camera_matrix = []
-        for val in camera_matrix:
-            if val > 1 or val < -1:
-                cleaned_camera_matrix.append(val.clip(-1,1))
-            else:
-                cleaned_camera_matrix.append(val)
+        # Ensure camera_matrix is the right shape (4,4)
+        camera_matrix = camera_matrix.reshape(4, 4)
+        
+        # Create a copy to avoid modifying the original
+        cleaned_camera_matrix = camera_matrix.copy()
+        
+        # Get the translation vector (last row)
+        translation = camera_matrix[3, :]
+        
+        # Define clip bounds (e.g., 5th and 95th percentiles)
+        lower_bound = np.percentile(translation, 5)
+        upper_bound = np.percentile(translation, 95)
+        
+        # Clip the translation values
+        clipped_translation = np.clip(translation, lower_bound, upper_bound)
+        
+        # Replace the last row with clipped values
+        cleaned_camera_matrix[3, :] = clipped_translation
+        
+        # Flatten the cleaned camera matrix
+        cleaned_camera_matrix = cleaned_camera_matrix.flatten()
+        
         return cleaned_camera_matrix
               
 
