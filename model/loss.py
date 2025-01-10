@@ -118,3 +118,5 @@ def project_points_dlt(points_3d, view_matrix, projection_matrix):
     points_2d = points_projected[:, :2] / points_projected[:, 2:3]
     
     return points_2d
+
+
