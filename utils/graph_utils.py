@@ -53,4 +53,4 @@ def get_spatial_graph(skeleton: Skeleton, strategy: str = 'distance') -> np.ndar
     deg_inv[np.isinf(deg_inv)] = 0
     norm_adj = np.multiply(np.multiply(adj, deg_inv[:, np.newaxis]), deg_inv[np.newaxis, :])
     
-    return norm_adj  
+    return norm_adj 
