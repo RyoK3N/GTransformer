@@ -136,3 +136,4 @@ class Skeleton:
         ax.set_aspect('equal')
         ax.set_title("Skeleton with Keypoints", pad=20)
 
+    
