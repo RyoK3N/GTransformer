@@ -98,23 +98,32 @@ class Block(nn.Module):
 
 class KTPFormer(nn.Module):
     def __init__(self, input_dim=None, embed_dim=128, depth=4, num_heads=8,
-                 mlp_ratio=4., drop_rate=0., adj=None, disable_tpa=True):
+                 mlp_ratio=4., drop_rate=0., adj=None, disable_tpa=True, device='auto'):
         super().__init__()
+        # Determine device
+        if device == 'auto':
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = torch.device(device)
+            
         num_joints = adj.shape[0]
         if input_dim is None:
             input_dim = num_joints * 2
 
+        # Move adj to the correct device
+        self.adj = torch.tensor(adj, dtype=torch.float, device=self.device) if isinstance(adj, np.ndarray) else adj.to(self.device)
+
         self.num_joints = num_joints
         self.embed_dim = embed_dim
-        self.input_layer = nn.Linear(2, embed_dim)
+        self.input_layer = nn.Linear(2, embed_dim).to(self.device)
         self.pos_drop = nn.Dropout(p=drop_rate)
-        self.kpa = KPA(adj, embed_dim, embed_dim)
+        self.kpa = KPA(self.adj, embed_dim, embed_dim)
         self.disable_tpa = disable_tpa
         self.track_activations = False
         self.activations = {}
 
         if not self.disable_tpa:
-            self.tpa = TPA(adj, embed_dim, embed_dim)
+            self.tpa = TPA(self.adj, embed_dim, embed_dim)
 
         self.blocks = nn.ModuleList([
             Block(dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, drop=drop_rate) 
@@ -122,8 +131,14 @@ class KTPFormer(nn.Module):
         ])
         self.norm = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, 16)
+        
+        # Move entire model to device
+        self.to(self.device)
 
     def forward(self, x):
+        # Ensure input is on the correct device
+        x = x.to(self.device)
+        
         activations = {} if self.track_activations else None
         
         B = x.shape[0]
@@ -162,4 +177,4 @@ class KTPFormer(nn.Module):
 
         if self.track_activations:
             return x, activations
-        return x 
+        return x
