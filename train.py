@@ -47,9 +47,9 @@ def parse_args():
                         help='Number of epochs to train')
     parser.add_argument('--num_workers', type=int, default=0,
                         help='Number of workers for data loading')
-    parser.add_argument('--device', type=str, 
-                        default='cuda' if torch.cuda.is_available() else 'cpu',
-                        help='Device to use for training')
+    parser.add_argument('--device', type=str, default='auto',
+                        choices=['auto', 'cuda', 'mps', 'cpu'],
+                        help='Device to use for training (auto/cuda/mps/cpu)')
     
     # Model saving and data splits
     parser.add_argument('--model_save_path', type=str, 
@@ -173,9 +173,31 @@ def compute_frobenius_norm(pred, target):
     """Compute Frobenius norm between prediction and target"""
     return torch.norm(pred - target, p='fro')
 
+def get_device(device):
+    if device == 'auto':
+        return 'cuda' if torch.cuda.is_available() else 'cpu'
+    elif device == 'cuda':
+        return 'cuda'
+    elif device == 'mps':
+        return 'mps'
+    else:
+        return 'cpu'
+
 def train(args):
     # Set seeds for reproducibility
     set_seeds(args.random_seed)
+
+    # Resolve device
+    args.device = get_device(args.device)
+    print(f"\nDevice Information:")
+    print(f"Selected device: {args.device}")
+    if args.device == 'cuda':
+        print(f"CUDA device count: {torch.cuda.device_count()}")
+        print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
+    elif args.device == 'mps':
+        print("Using Apple Silicon GPU (MPS)")
+    else:
+        print("Using CPU for computation")
 
     # Initialize tensorboard writer
     current_time = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -291,9 +313,13 @@ def train(args):
         adj=adj_matrix,
         depth=4,
         num_heads=8,
-        drop_rate=0.2
-    ).to(args.device)
+        drop_rate=0.2,
+        device=args.device
+    )
 
+    #print("\nModel Device Information:")
+    #print(f"Model device: {next(model.parameters()).device}")
+    
     model.apply(initialize_weights)
 
     # Add model graph visualization
@@ -330,19 +356,21 @@ def train(args):
         with torch.no_grad():
             for i, batch_data in enumerate(val_loader):
                 keypoints_2d, keypoints_3d, camera_matrix = batch_data[0], batch_data[1], batch_data[2]
-                keypoints_2d = keypoints_2d.to(args.device)
-                keypoints_3d = keypoints_3d.to(args.device)
-                camera_matrix = camera_matrix.to(args.device)
+                keypoints_2d = keypoints_2d.to(args.device).view(-1, 31, 2)  # Ensure correct shape
+                keypoints_3d = keypoints_3d.to(args.device).view(-1, 31, 3)  # Ensure correct shape
+                camera_matrix = camera_matrix.to(args.device).view(-1, 4, 4)  # Ensure correct shape
                 
                 model.track_activations = True
-                outputs, activations = model(keypoints_2d)
+                outputs = model(keypoints_2d)
+                if isinstance(outputs, tuple):
+                    outputs, activations = outputs
                 
                 loss, frob_loss, recon_loss = weighted_frobenius_loss(
                     outputs, 
                     camera_matrix,
-                    keypoints_3d.view(keypoints_3d.shape[0], -1, 3),
-                    keypoints_2d.view(keypoints_2d.shape[0], -1, 2),
-                    alpha=0.5
+                    keypoints_3d,
+                    keypoints_2d,
+                    alpha=0.7
                 )
                 
                 val_loss += loss.item()
@@ -352,20 +380,26 @@ def train(args):
                 if show_visualization and i % 50 == 0:
                     try:
                         # Validation visualizations
-                        fig = skeleton.plot_graph_with_keypoints(keypoints_2d[0].cpu().numpy())
+                        keypoints_2d_np = keypoints_2d[0].detach().cpu().numpy()
+                        keypoints_2d_np = keypoints_2d_np.reshape(31, 2)  # Reshape to (num_joints, 2)
+                        fig = skeleton.plot_graph_with_keypoints(keypoints_2d_np)
                         writer.add_figure('Validation/InputSkeleton', fig, global_step)
                         plt.close(fig)
                         
                         visualize_graph_convolutions(skeleton, activations, writer, global_step)
                         
                         fig = plt.figure(figsize=(10, 5))
-                        pred_np = outputs[0].detach().cpu().numpy()
-                        target_np = camera_matrix[0].detach().cpu().numpy()
-                        plt.plot(pred_np, label='Predicted', marker='o')
-                        plt.plot(target_np, label='Target', marker='x')
-                        plt.title(f'Validation Predictions (Batch {i})')
-                        plt.legend()
-                        plt.grid(True)
+                        pred_np = outputs[0].detach().cpu().numpy().reshape(4, 4)  # Reshape to 4x4 matrix
+                        target_np = camera_matrix[0].detach().cpu().numpy().reshape(4, 4)  # Reshape to 4x4 matrix
+                        plt.subplot(1, 2, 1)
+                        plt.imshow(pred_np, cmap='viridis')
+                        plt.colorbar()
+                        plt.title('Predicted Camera Matrix')
+                        plt.subplot(1, 2, 2)
+                        plt.imshow(target_np, cmap='viridis')
+                        plt.colorbar()
+                        plt.title('Target Camera Matrix')
+                        plt.tight_layout()
                         writer.add_figure('Validation/Predictions', fig, global_step)
                         plt.close(fig)
                         
@@ -388,26 +422,43 @@ def train(args):
         total_recon_loss = 0.0
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{args.epochs}", leave=True)
 
+        # Print device information for first batch of first epoch
+        if epoch == 0:
+            print("\nDevice Information Check:")
+            first_batch = next(iter(train_loader))
+            keypoints_2d = first_batch[0].to(args.device)
+            print(f"Input tensor (before move): {first_batch[0].device}")
+            print(f"Input tensor (after move): {keypoints_2d.device}")
+            print(f"Model parameters: {next(model.parameters()).device}")
+            print(f"Target device: {args.device}")
+            
+            # Test forward pass
+            with torch.no_grad():
+                test_output = model(keypoints_2d)
+                print(f"Output tensor: {test_output.device}\n")
+
         try:
             for batch_idx, batch_data in enumerate(progress_bar):
                 keypoints_2d, keypoints_3d, camera_matrix = batch_data[0], batch_data[1], batch_data[2]
-                keypoints_2d = keypoints_2d.to(args.device)
-                keypoints_3d = keypoints_3d.to(args.device)
-                camera_matrix = camera_matrix.to(args.device)
+                keypoints_2d = keypoints_2d.to(args.device).view(-1, 31, 2)  # Ensure correct shape
+                keypoints_3d = keypoints_3d.to(args.device).view(-1, 31, 3)  # Ensure correct shape
+                camera_matrix = camera_matrix.to(args.device).view(-1, 4, 4)  # Ensure correct shape
                 
                 optimizer.zero_grad()
 
                 # Always track activations
                 model.track_activations = True
-                outputs, activations = model(keypoints_2d)
+                outputs = model(keypoints_2d)
+                if isinstance(outputs, tuple):
+                    outputs, activations = outputs
                 
                 # Compute combined loss
                 loss, frob_loss, recon_loss = weighted_frobenius_loss(
                     outputs, 
                     camera_matrix,
-                    keypoints_3d.view(keypoints_3d.shape[0], -1, 3),
-                    keypoints_2d.view(keypoints_2d.shape[0], -1, 2),
-                    alpha=0.5  # Adjust this weight as needed
+                    keypoints_3d,
+                    keypoints_2d,
+                    alpha=0.7
                 )
 
                 if scaler is not None:
@@ -439,7 +490,9 @@ def train(args):
                 if batch_idx % 10 == 0:
                     try:
                         # Input skeleton visualization
-                        fig = skeleton.plot_graph_with_keypoints(keypoints_2d[0].cpu().numpy())
+                        keypoints_2d_np = keypoints_2d[0].detach().cpu().numpy()
+                        keypoints_2d_np = keypoints_2d_np.reshape(31, 2)  # Reshape to (num_joints, 2)
+                        fig = skeleton.plot_graph_with_keypoints(keypoints_2d_np)
                         plt.title(f'Input Skeleton (Epoch {epoch+1}, Batch {batch_idx})')
                         writer.add_figure('Training/InputSkeleton', fig, global_step)
                         plt.close(fig)
@@ -449,13 +502,45 @@ def train(args):
 
                         # Prediction visualization
                         fig = plt.figure(figsize=(10, 5))
-                        pred_np = outputs[0].detach().cpu().numpy()
-                        target_np = camera_matrix[0].detach().cpu().numpy()
-                        plt.plot(pred_np, label='Predicted', marker='o')
-                        plt.plot(target_np, label='Target', marker='x')
-                        plt.title(f'Predictions vs Targets (Epoch {epoch+1}, Batch {batch_idx})')
+                        pred_np = outputs[0].detach().cpu().numpy().reshape(4, 4)  # Reshape to 4x4 matrix
+                        target_np = camera_matrix[0].detach().cpu().numpy().reshape(4, 4)  # Reshape to 4x4 matrix
+                        # Create line plot comparison
+                        fig = plt.figure(figsize=(15, 5))
+                        
+                        # Flatten matrices for line plot
+                        pred_flat = pred_np.flatten()
+                        target_flat = target_np.flatten()
+                        x_axis = np.arange(len(pred_flat))
+                        
+                        # Plot lines
+                        plt.subplot(1, 2, 1)
+                        plt.plot(x_axis, pred_flat, 'b-', label='Predicted', linewidth=2)
+                        plt.plot(x_axis, target_flat, 'r--', label='Target', linewidth=2)
+                        plt.xlabel('Matrix Element Index')
+                        plt.ylabel('Value')
+                        plt.title('Camera Matrix Values Comparison')
                         plt.legend()
                         plt.grid(True)
+                        
+                        # Keep the original heatmap visualization
+                        plt.subplot(1, 2, 2)
+                        diff = pred_np - target_np
+                        
+                        # Create a diverging colormap centered at 0
+                        vmax = max(abs(diff.min()), abs(diff.max()))
+                        vmin = -vmax
+                        im = plt.imshow(diff, cmap='RdBu_r', vmin=vmin, vmax=vmax)
+                        
+                        # Annotate each cell with its difference value
+                        for i in range(diff.shape[0]):
+                            for j in range(diff.shape[1]):
+                                text = f'{diff[i, j]:.3f}'
+                                plt.text(j, i, text, ha='center', va='center')
+                        
+                        plt.colorbar(im)
+                        plt.title('Difference Matrix')
+                        
+                        plt.tight_layout()
                         writer.add_figure('Training/Predictions', fig, global_step)
                         plt.close(fig)
 
@@ -533,3 +618,6 @@ def train(args):
 if __name__ == "__main__":
     args = parse_args()
     train(args)
+
+
+
