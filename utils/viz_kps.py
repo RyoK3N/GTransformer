@@ -77,4 +77,4 @@ def visualize_graph_convolutions(skeleton, activations, writer, global_step):
             writer.add_figure('Graph/KPAAnalysis', fig, global_step)
             plt.close(fig)
     except Exception as e:
-        print(f"Warning: Error in visualize_graph_convolutions: {str(e)}") 
+        print(f"Warning: Error in visualize_graph_convolutions: {str(e)}")
