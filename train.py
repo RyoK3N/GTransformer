@@ -191,8 +191,8 @@ def train(args):
 
     # Define skeleton structure
     connections = [
-        ('Head', 'Neck'), ('Neck', 'Chest'), ('Chest', 'Hips'),
-        ('Neck', 'LeftShoulder'), ('LeftShoulder', 'LeftArm'),
+        ('Head', 'Neck'), ('Neck', 'Chest'),
+        ('Chest',"LeftShoulder"),('LeftShoulder', 'LeftArm'),
         ('LeftArm', 'LeftForearm'), ('LeftForearm', 'LeftHand'),
         ('Chest', 'RightShoulder'), ('RightShoulder', 'RightArm'),
         ('RightArm', 'RightForearm'), ('RightForearm', 'RightHand'),
