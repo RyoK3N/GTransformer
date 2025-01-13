@@ -1,3 +1,6 @@
 .env
 runs/
 weights/
+optuna_logs/
+optuna_study_results/
+optuna_weights/
