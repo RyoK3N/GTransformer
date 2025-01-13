@@ -172,3 +172,4 @@ class MocapDataset(Dataset):
         if self.client:
             self.client.close()
             self.client = None
+ 
