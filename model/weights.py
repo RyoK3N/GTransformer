@@ -23,3 +23,4 @@ def initialize_weights(m: nn.Module) -> None:
     elif isinstance(m, nn.Parameter):
         # Initialize other parameters with Xavier/Glorot
         nn.init.xavier_uniform_(m) 
+ 
