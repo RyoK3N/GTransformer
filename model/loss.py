@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-def weighted_frobenius_loss(pred: torch.Tensor, target: torch.Tensor, points_3d: torch.Tensor, points_2d: torch.Tensor, alpha: float = 0.5) -> torch.Tensor:
+def weighted_frobenius_loss(pred: torch.Tensor, target: torch.Tensor, points_3d: torch.Tensor, points_2d: torch.Tensor, alpha: float = 0.7) -> torch.Tensor:
     """
     Frobenius norm and reconstruction error
     
@@ -12,7 +12,7 @@ def weighted_frobenius_loss(pred: torch.Tensor, target: torch.Tensor, points_3d:
         target: Target camera matrix (B, 16)
         points_3d: 3D keypoints (B, N, 3)
         points_2d: 2D keypoints (B, N, 2)
-        alpha: Weight for combining losses (default: 0.5)
+        alpha: Weight for combining losses (default: 0.7)
     """
     # Frobenius norm loss for ground truth camera matrices vs predicted camera matrices
     pred_matrix = pred.view(-1, 4, 4)
