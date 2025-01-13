@@ -137,3 +137,4 @@ class Skeleton:
         ax.set_title("Skeleton with Keypoints", pad=20)
 
     
+ 
