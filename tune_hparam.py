@@ -6,6 +6,7 @@ import argparse
 import pickle  
 from train import train, parse_args
 from optuna.trial import TrialState
+from torch.utils.tensorboard import SummaryWriter  # Import TensorBoard
 
 def setup_logging(log_dir: str):
     """
@@ -40,7 +41,7 @@ def objective(trial):
     depth = trial.suggest_int('depth', 2, 6)
     num_heads = trial.suggest_categorical('num_heads', [4, 8, 16])
     drop_rate = trial.suggest_uniform('drop_rate', 0.1, 0.5)
-    data_fraction = trial.suggest_uniform('data_fraction', 0.05, 0.5)  #  data_fraction
+    data_fraction = trial.suggest_uniform('data_fraction', 0.01, 0.099)  #  data_fraction
 
     args = parse_args()
     args.random_seed = random_seed
@@ -68,6 +69,9 @@ def objective(trial):
         logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
+    # Initialize TensorBoard writer
+    writer = SummaryWriter(log_dir=args.log_dir)
+
     try:
         logger.info(f"Starting Trial {trial.number}")
         logger.info(
@@ -89,9 +93,17 @@ def objective(trial):
             val_loss = float('inf')
             logger.warning(f"Trial {trial.number} did not save a model. Assigning val_loss as infinity.")
 
+        # Log validation loss and hyperparameters to TensorBoard
+        writer.add_scalar('Validation Loss', val_loss, trial.number)
+        for key, value in trial.params.items():
+            writer.add_text(f'Hyperparameter/{key}', str(value), trial.number)
+
     except Exception as e:
         logger.error(f"Error during trial {trial.number}: {e}", exc_info=True)
         val_loss = float('inf')
+
+    finally:
+        writer.close()  # Ensure the writer is closed
 
     return val_loss
 
@@ -112,7 +124,7 @@ def main():
                         help='Directory to save model weights.')
     parser.add_argument('--study_file', type=str, default='optuna_study_results/optuna_study.pkl',
                         help='File path to save/load the Optuna study.')
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()  # Capture unknown args to avoid conflicts
 
     # logging
     setup_logging(args.log_dir)
@@ -166,6 +178,8 @@ def main():
         )
     except KeyboardInterrupt:
         logger.warning("Optimization interrupted manually.")
+    except Exception as e:
+        logger.error(f"Unexpected error during optimization: {e}", exc_info=True)
 
     pruned_trials = study.get_trials(deepcopy=False, states=[TrialState.PRUNED])
     complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
